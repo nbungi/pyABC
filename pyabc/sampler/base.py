@@ -31,44 +31,27 @@ class Sample:
             Concatenation of all the all_sum_stats lists of all
             particles added and accepted to this sample via append().
         """
-        return sum((particle.all_sum_stats
-                    for particle in self._particles), [])
+        return [p.sum_stats for p in self._particles]
 
     @property
     def _accepted_particles(self) -> List[Particle]:
         """
+        Get the list of accepted particles.
+
         Returns
         -------
 
-        List of only the accepted particles.
+        list_accepted_particles: List[Particle]
+            The accepted particles.
         """
-        return [particle.copy()
-                for particle in self._particles if particle.accepted]
-
-    def append(self, particle: Particle):
-        """
-        Add new particle to the sample.
-
-
-        Parameters
-        ----------
-
-        particle: Particle
-            Sampled particle containing all information needed later.
-        """
-
-        # add to population if accepted
-        if particle.accepted or self.record_all_sum_stats:
-            self._particles.append(particle)
-
-    def __add__(self, other: "Sample"):
-        sample = self.__class__(self.record_all_sum_stats)
-        sample._particles = self._particles + other._particles
-        return sample
+        return [particle for particle in self._particles
+                if particle.accepted]
 
     @property
     def n_accepted(self) -> int:
         """
+        Get the number of accepted particles.
+
         Returns
         -------
 
@@ -79,6 +62,8 @@ class Sample:
 
     def get_accepted_population(self) -> Population:
         """
+        Generate a population of accepted particles.
+
         Returns
         -------
 
@@ -86,6 +71,31 @@ class Sample:
             A population of only the accepted particles.
         """
         return Population(self._accepted_particles)
+
+    def append(self, particle: Particle):
+        """
+        Add a new particle to the sample, given the conditions
+        to append are met (either it is an accepted one, or
+        self.record_all_sum_stats).
+
+        Parameters
+        ----------
+
+        particle: Particle
+            Particle to append.
+        """
+
+        # add to population if accepted
+        if particle.accepted or self.record_all_sum_stats:
+            self._particles.append(particle)
+
+    def __add__(self, other: "Sample"):
+        """
+        Add to samples and create a new one.
+        """
+        sample = Sample(self.record_all_sum_stats)
+        sample._particles = self._particles + other._particles
+        return sample
 
 
 class SampleFactory:

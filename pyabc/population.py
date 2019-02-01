@@ -15,30 +15,19 @@ class Particle:
     ----------
 
     m: int
-        The model nr
+        The model index.
 
     parameter: Parameter
-        The model specific parameter
+        The model specific parameter.
 
     weight: float, 0 < weight < 1
-        The weight of the particle
+        The weight of the particle.
 
-    distances: List[float]
-        A particle can contain more than one sample.
-        If so, the distances of the individual samples
-        are stored in this list. In the most common case of a single
-        sample, this list has length 1.
+    sum_stats: dict
+        Simulated summary statistics.
 
-    accepted_sum_stats
-        List of accepted summary statistics which describe the particle
-        This list is usually of length 1. This list is longer only if more
-        than one sample is taken for a particle.
-        This list has length 0 if the particle is rejected.
-
-    all_sum_stats: List[dict]
-        List of all summary statistics generated during the creation of this
-        particle (also when they led to rejection).
-        This list is non-empty also for rejected particles.
+    distance: float
+        Distacne between the simulated and observed summary statistics.
 
     accepted: bool
         True if particle was accepted, False if not.
@@ -59,39 +48,23 @@ class Particle:
     def __init__(self, m: int,
                  parameter: Parameter,
                  weight: float,
-                 accepted_distances: List[float],
-                 accepted_sum_stats: List[dict],
-                 all_sum_stats: List[dict] = None,
-                 accepted: bool = True):
+                 sum_stats: dict,
+                 distance: float,
+                 accepted: bool):
 
         self.m = m
         self.parameter = parameter
         self.weight = weight
-        self.accepted_distances = accepted_distances
-        self.accepted_sum_stats = accepted_sum_stats
-        self.all_sum_stats = all_sum_stats
+        self.sum_stats = sum_stats
+        self.distance = distance
         self.accepted = accepted
-
-    def __getitem__(self, item):
-        return getattr(self, item)
-
-    def __setitem__(self, key, value):
-        setattr(self, key, value)
-
-    def __eq__(self, other):
-        for key in ["m", "parameter", "weight", "accepted_distances",
-                    "accepted_sum_stats", "all_sum_stats"]:
-            if self[key] != other[key]:
-                return False
-        return True
 
     def copy(self):
         return self.__class__(self.m,
                               self.parameter,
                               self.weight,
-                              self.accepted_distances,
-                              self.accepted_sum_stats,
-                              self.all_sum_stats,
+                              self.sum_stats,
+                              self.distance,
                               self.accepted)
 
 
@@ -157,9 +130,7 @@ class Population:
         """
 
         for particle in self._list:
-            for i in range(len(particle.accepted_distances)):
-                particle.accepted_distances[i] = distance_to_ground_truth(
-                    particle.accepted_sum_stats[i])
+            particle.distance = distance_to_ground_truth(particle.sum_stats)
 
     def get_model_probabilities(self) -> dict:
         """
@@ -193,9 +164,8 @@ class Population:
         rows = []
         for particle in self._list:
             model_probability = self._model_probabilities[particle.m]
-            for distance in particle.accepted_distances:
-                rows.append({'distance': distance,
-                             'w': particle.weight * model_probability})
+            rows.append({'distance': particle.distance,
+                         'w': particle.weight * model_probability})
 
         weighted_distances = pd.DataFrame(rows)
 

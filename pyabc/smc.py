@@ -10,8 +10,9 @@ implement a Strategy pattern.)
 import datetime
 import logging
 from typing import List, Callable, TypeVar
-import pandas as pd
+import numpy as np
 import scipy as sp
+import pandas as pd
 from .distance_functions import to_distance
 from .epsilon import Epsilon, MedianEpsilon
 from .model import Model
@@ -28,6 +29,7 @@ from .platform_factory import DefaultSampler
 from .acceptor import accept_use_current_time, SimpleAcceptor
 import copy
 import warnings
+
 
 logger = logging.getLogger("ABC")
 
@@ -132,7 +134,6 @@ class ABCSMC:
     stop_if_only_single_model_alive: bool
         Defaults to False. Set this to true if you want to stop ABCSMC
         automatically as soon as only a single model has survived.
-
 
 
     .. [#tonistumpf] Toni, Tina, and Michael P. H. Stumpf.
@@ -444,20 +445,22 @@ class ABCSMC:
         # simulation function, simplifying some parts compared to later
 
         def simulate_one():
+            # sample model
             m = int(model_prior.rvs())
+            # sample parameters
             theta = parameter_priors[m].rvs()
-            sum_stats = []
-            all_sum_stats = []
+            # simulate data
             model_result = models[m].summary_statistics(
                 t, theta, summary_statistics)
-            all_sum_stats.append(model_result.sum_stats)
-            weight = 0
-            accepted_distances = []
-            accepted = True
-            # only the all_summary_statistics field will be read later
+            # create particle
+            # only the sum_stats field will be read later
             return Particle(
-                m, theta, weight, accepted_distances,
-                sum_stats, all_sum_stats, accepted)
+                m=m,
+                parameter=theta,
+                weight=1.0,
+                sum_stats=model_result.sum_stats,
+                distance=np.inf,
+                accepted=True)
 
         return simulate_one
 
@@ -512,8 +515,6 @@ class ABCSMC:
         parameter_priors = self.parameter_priors
         model_perturbation_kernel = self.model_perturbation_kernel
         transitions = self.transitions
-        nr_samples_per_parameter = \
-            self.population_strategy.nr_samples_per_parameter
         models = self.models
         summary_statistics = self.summary_statistics
         distance_function = self.distance_function
@@ -533,7 +534,6 @@ class ABCSMC:
                 *parameter,
                 t,
                 model_probabilities,
-                nr_samples_per_parameter,
                 models,
                 summary_statistics,
                 distance_function,
@@ -570,7 +570,6 @@ class ABCSMC:
         Model, parameter.
 
         """
-
         # first generation
         if t == 0:  # sample from prior
             m_ss = int(model_prior.rvs())
@@ -601,7 +600,6 @@ class ABCSMC:
             m_ss, theta_ss,
             t,
             model_probabilities,
-            nr_samples_per_parameter,
             models,
             summary_statistics,
             distance_function,
@@ -620,81 +618,74 @@ class ABCSMC:
         """
 
         # from here, theta_ss is valid according to the prior
+        model_result = models[m_ss].accept(
+            t,
+            theta_ss,
+            summary_statistics,
+            distance_function,
+            eps,
+            acceptor,
+            x_0)
 
-        accepted_distances = []
-        accepted_sum_stats = []
-        all_sum_stats = []
-
-        for _ in range(nr_samples_per_parameter):
-            model_result = models[m_ss].accept(
-                t,
-                theta_ss,
-                summary_statistics,
-                distance_function,
-                eps,
-                acceptor,
-                x_0)
-            # append to all_sum_stats in either case to allow for the situation
-            # that in population.all_sum_stats() one is only interested in
-            # accepted particles
-            all_sum_stats.append(model_result.sum_stats)
-            if model_result.accepted:
-                accepted_distances.append(model_result.distance)
-                accepted_sum_stats.append(model_result.sum_stats)
-
-        accepted = len(accepted_sum_stats) > 0
-
-        if accepted:
+        # compute (non-normalized) weight
+        if model_result.accepted:
             weight = ABCSMC._calc_proposal_weight(
-                accepted_distances, m_ss, theta_ss, t, model_probabilities,
+                model_result.distance, m_ss, theta_ss, t,
+                model_probabilities,
                 model_prior,
                 parameter_priors,
-                nr_samples_per_parameter,
                 model_perturbation_kernel,
                 transitions)
         else:
             weight = 0
 
+        # create and return a new particle
         return Particle(
-            m_ss, theta_ss, weight, accepted_distances,
-            accepted_sum_stats, all_sum_stats, accepted)
+            m=m_ss,
+            parameter=theta_ss,
+            weight=weight,
+            sum_stats=model_result.sum_stats,
+            distance=model_result.distance,
+            accepted=model_result.accepted)
 
     @staticmethod
     def _calc_proposal_weight(
-            distance_list,
+            distance,
             m_ss,
             theta_ss,
             t,
             model_probabilities,
             model_prior,
             parameter_priors,
-            nr_samples_per_parameter,
             model_perturbation_kernel,
             transitions):
         """
         Calculate the weight for the generated parameter.
         """
-
         if t == 0:
-            weight = (len(distance_list)
-                      / nr_samples_per_parameter)
-        else:
+            weight = 1.0
+        else: 
+            # compute prior density
+            prior_dty = (model_prior.pmf(m_ss)
+                         * parameter_priors[m_ss].pdf(theta_ss))
+            
+            # compute proposal density
             model_factor = sum(
                 row.p * model_perturbation_kernel.pmf(m_ss, m)
                 for m, row in model_probabilities.iterrows())
             particle_factor = transitions[m_ss].pdf(
                 pd.Series(dict(theta_ss)))
-            normalization = model_factor * particle_factor
-            if normalization == 0:
-                print('normalization is zero!')
-            # reflects stochasticity of the model
-            fraction_accepted_runs_for_single_parameter = (
-                    len(distance_list)
-                    / nr_samples_per_parameter)
-            weight = (model_prior.pmf(m_ss)
-                      * parameter_priors[m_ss].pdf(theta_ss)
-                      * fraction_accepted_runs_for_single_parameter
-                      / normalization)
+            proposal_dty = model_factor * particle_factor
+            
+            # check proposal density
+            if np.isclose(proposal_dty, 0.0):
+                # this should happend w/ probability zero
+                logger.warning(
+                    f"Proposal density at {theta_ss} for model {model_ss} "
+                    f"is zero.")
+            
+            # compute weight
+            weight = prior_dty / proposal_dty
         return weight
 
     def run(self, minimum_epsilon: float, max_nr_populations: int,

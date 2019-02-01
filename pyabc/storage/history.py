@@ -473,10 +473,10 @@ class History:
             # iterate over model population of particles
             for store_item in model_population:
                 # a store_item is a Particle
-                weight = store_item.weight
-                distance_list = store_item.accepted_distances
                 parameter = store_item.parameter
-                summary_statistics_list = store_item.accepted_sum_stats
+                weight = store_item.weight
+                distance = store_item.distance
+                sum_stats = store_item.sum_stats
 
                 # create new particle
                 particle = Particle(w=weight)
@@ -497,21 +497,18 @@ class History:
                         particle.parameters.append(
                             Parameter(name=key, value=value))
 
-                # append samples to particle
-                for distance, sum_stat in zip(distance_list,
-                                              summary_statistics_list):
-                    # create new sample from distance
-                    sample = Sample(distance=distance)
-                    # append to particle
-                    particle.samples.append(sample)
-                    # append sum stat dimensions to sample
-                    if self.stores_sum_stats:
-                        for name, value in sum_stat.items():
-                            if name is None:
-                                raise Exception(
-                                    "Summary statistics need names.")
-                            sample.summary_statistics.append(
-                                SummaryStatistic(name=name, value=value))
+                # append sample to particle
+                sample = Sample(distance=distance)
+                # append to particle
+                particle.samples.append(sample)
+                # append sum stat dimensions to sample
+                if self.stores_sum_stats:
+                    for name, value in sum_stats.items():
+                        if name is None:
+                            raise Exception(
+                                "Summary statistics need names.")
+                        sample.summary_statistics.append(
+                            SummaryStatistic(name=name, value=value))
 
         # commit changes
         self._session.commit()

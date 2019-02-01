@@ -33,17 +33,11 @@ class PopulationStrategy:
     ----------
 
     nr_particles: int
-       Number of particles per populations
-
-    nr_samples_per_parameter: int, optional
-        Number of samples to draw for a proposed parameter.
-        Default is 1.
+       Number of particles per population.
     """
 
-    def __init__(self, nr_particles: int, *,
-                 nr_samples_per_parameter: int = 1):
+    def __init__(self, nr_particles: int):
         self.nr_particles = nr_particles
-        self.nr_samples_per_parameter = nr_samples_per_parameter
 
     def adapt_population_size(self, transitions: List[Transition],
                               model_weights: np.ndarray):
@@ -58,7 +52,7 @@ class PopulationStrategy:
         Returns
         -------
         n: int
-            The new population size
+            The new population size.
         """
         raise NotImplementedError
 
@@ -134,15 +128,11 @@ class AdaptivePopulationSize(PopulationStrategy):
 
     min_population_size: int, optional
         Min number of particles allowed in a population.
-        Defaults to 10
-
-    nr_samples_per_parameter: int, optional
-        Defaults to 1.
+        Defaults to 10.
 
     n_bootstrap: int, optional
         Number of bootstrapped populations to use to estimate the CV.
         Defaults to 10.
-
 
 
     .. [#klingerhasenaueradaptive] Klinger, Emmanuel, and Jan Hasenauer.
@@ -158,10 +148,8 @@ class AdaptivePopulationSize(PopulationStrategy):
                  *,
                  max_population_size=float("inf"),
                  min_population_size=10,
-                 nr_samples_per_parameter=1,
                  n_bootstrap=10):
-        super().__init__(start_nr_particles,
-                         nr_samples_per_parameter=nr_samples_per_parameter)
+        super().__init__(start_nr_particles)
         self.max_population_size = max_population_size
         self.min_population_size = min_population_size
         self.mean_cv = mean_cv
